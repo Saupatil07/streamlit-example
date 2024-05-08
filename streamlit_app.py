@@ -1,40 +1,64 @@
-import altair as alt
-import numpy as np
-import pandas as pd
+#import altair as alt
+#import numpy as np
+#import pandas as pd
 import streamlit as st
+# from unsloth import FastLanguageModel
+from transformers import TextStreamer,AutoTokenizer
+from peft import AutoPeftModelForCausalLM
 
-"""
-# Welcome to Streamlit!
 
-Edit `/streamlit_app.py` to customize this app to your heart's desire :heart:.
-If you have any questions, checkout our [documentation](https://docs.streamlit.io) and [community
-forums](https://discuss.streamlit.io).
+max_seq_length = 2048 # Choose any! We auto support RoPE Scaling internally!
+dtype = None # None for auto detection. Float16 for Tesla T4, V100, Bfloat16 for Ampere+
+load_in_4bit = True # Use 4bit quantization to reduce memory usage. Can be False.
+ # Enable native 2x faster inference
+@st.cache(allow_output_mutation=True)
+def get_model():
+    # model, tokenizer = FastLanguageModel.from_pretrained(
+    # model_name = "lora_model", # YOUR MODEL YOU USED FOR TRAINING
+    # max_seq_length = max_seq_length,
+    # dtype = dtype,
+    # load_in_4bit = load_in_4bit,
+    # )
+    model = AutoPeftModelForCausalLM.from_pretrained(
+    "Ellight/gemma-2b-bnb-4bit", # YOUR MODEL YOU USED FOR TRAINING
+    load_in_4bit = load_in_4bit,
+    )
+    tokenizer = AutoTokenizer.from_pretrained("Ellight/gemma-2b-bnb-4bit")
+    return tokenizer,model
 
-In the meantime, below is an example of what you can do with just a few lines of code:
-"""
 
-num_points = st.slider("Number of points in spiral", 1, 10000, 1100)
-num_turns = st.slider("Number of turns in spiral", 1, 300, 31)
+tokenizer,model = get_model()
 
-indices = np.linspace(0, 1, num_points)
-theta = 2 * np.pi * num_turns * indices
-radius = indices
 
-x = radius * np.cos(theta)
-y = radius * np.sin(theta)
 
-df = pd.DataFrame({
-    "x": x,
-    "y": y,
-    "idx": indices,
-    "rand": np.random.randn(num_points),
-})
+st.set_page_config(
+    page_title="Your own aiChat!"
+)
 
-st.altair_chart(alt.Chart(df, height=700, width=700)
-    .mark_point(filled=True)
-    .encode(
-        x=alt.X("x", axis=None),
-        y=alt.Y("y", axis=None),
-        color=alt.Color("idx", legend=None, scale=alt.Scale()),
-        size=alt.Size("rand", legend=None, scale=alt.Scale(range=[1, 150])),
-    ))
+# Create a header element
+st.header("Your own aiChat!")
+user_input = st.text_area('Enter Text to Analyze')
+button = st.button("Analyze")
+
+if user_input and button :
+    #FastLanguageModel.for_inference(model)
+
+    prompt = """
+    ### Instruction:
+    {}
+
+    ### Response:
+    {}"""
+
+    inputs = tokenizer(
+    [
+        prompt.format(
+            user_input, # instruction
+            "", # output - leave this blank for generation!
+        )
+    ], return_tensors = "pt")
+
+    text_streamer = TextStreamer(tokenizer)
+    outputs = model.generate(**inputs, streamer = text_streamer, max_new_tokens = 512)
+
+    st.write(tokenizer.batch_decode(outputs))
